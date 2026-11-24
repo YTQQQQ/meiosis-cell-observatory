@@ -1,0 +1,41 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>减数分裂 · 浏览器验收</title>
+<style>body{font:16px system-ui}pre{white-space:pre-wrap}iframe{border:1px solid;width:820px;height:1180px}</style>
+<h1>浏览器验收</h1><pre id="report">正在检查…</pre><iframe title="被测动画" id="app"></iframe>
+<script>
+const frame=document.getElementById('app'),log=document.getElementById('report'),out=[];
+const check=(name,value)=>{if(!value)throw Error(name);out.push('通过　'+name);log.textContent=out.join('\n')};
+frame.onload=async()=>{
+ try{
+  const d=frame.contentDocument,w=frame.contentWindow,id=n=>d.getElementById(n);
+  const tick=()=>new Promise(ok=>w.requestAnimationFrame(()=>w.requestAnimationFrame(ok)));
+  await tick();
+  for(const [width,height] of [[820,1180],[1180,820]]){
+   frame.style.width=width+'px';frame.style.height=height+'px';await tick();
+   check(width+' × '+height+' 横向无溢出',d.documentElement.scrollWidth<=width+1);
+   check(width+' × '+height+' 主画面和播放区可见',id('world').clientHeight>200 && id('play').getBoundingClientRect().width>48);
+  }
+  const click=n=>id(n).click(),step=t=>{id('timeline').value=t;id('timeline').dispatchEvent(new Event('input'));};
+  click('female');step(7.3);check('次级卵母细胞计数',id('stats').textContent==='2染色体4核DNA4染色单体1染色体组');
+  click('d2');check('教材图可见',!id('map').hidden&&id('world').hidden);click('d3');
+  click('focusBtn');d.querySelector('[data-f="1"]').click();check('第一极体独立聚焦',!id('mini').hidden&&id('scopeName').textContent.includes('第一极体'));
+  click('restore');check('回到全部细胞',id('mini').hidden);
+  click('settings');id('cut').click();check('剖面开关',id('cut').checked);id('cut').click();click('settings');
+  click('male');click('independent');click('experimentCheck');click('results');
+  check('反转取向产生 Ab 与 aB',id('dialogBody').textContent.includes('Ab')&&id('dialogBody').textContent.includes('aB'));click('close');
+  click('linked');click('results');check('互换产物对应四种组合',['AB','Ab','aB','ab'].every(g=>Array.from(d.querySelectorAll('td')).some(c=>c.textContent===g)));click('close');
+  step(10.65);check('减Ⅱ后期单细胞计数',id('stats').textContent==='4染色体4核DNA0染色单体2染色体组');
+  click('curve');d.querySelector('[data-s="pole"]').click();check('减Ⅱ后期单极计数',id('stats').textContent==='2染色体2核DNA0染色单体1染色体组');click('close');
+  click('restart');check('重新开始',+id('timeline').value===0);click('next');check('进入复制期',id('lessonTitle').textContent.includes('DNA'));
+  click('lens');check('复制特写装载',!!id('closeup').querySelector('canvas'));click('close');
+  click('fold');check('收起数据',id('numbers').hidden);click('fold');
+  id('speed').selectedIndex=4;click('play');
+  const waitUntil=async predicate=>{const until=Date.now()+25000;while(!predicate()&&Date.now()<until)await new Promise(ok=>setTimeout(ok,100));};
+  await waitUntil(()=>id('play').textContent.includes('继续')&&+id('timeline').value===2);
+  check('分步自动暂停并停在复制完成处',id('play').textContent.includes('继续')&&+id('timeline').value===2);
+  click('play');await waitUntil(()=>+id('timeline').value>2.02);click('play');check('从上一检查点续播',+id('timeline').value>2&&+id('timeline').value<3);
+  step(13.99);check('受精阶段',id('lessonTitle').textContent.includes('受精'));
+  out.push('全部通过');log.textContent=out.join('\n');
+ }catch(error){log.textContent=out.join('\n')+'\n失败　'+error.message;}
+};
+frame.src=location.pathname.includes('/tests/')?'../dist/index.html':'index.html';
+</script></html>
