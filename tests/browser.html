@@ -8,6 +8,8 @@ frame.onload=async()=>{
  try{
   const d=frame.contentDocument,w=frame.contentWindow,id=n=>d.getElementById(n);
   const tick=()=>new Promise(ok=>w.requestAnimationFrame(()=>w.requestAnimationFrame(ok)));
+  const waitUntil=async predicate=>{const until=Date.now()+25000;while(!predicate()&&Date.now()<until)await new Promise(ok=>setTimeout(ok,50));};
+  const errors=[];w.addEventListener('error',e=>errors.push(e.message));w.addEventListener('unhandledrejection',e=>errors.push(String(e.reason)));
   await tick();
   for(const [width,height] of [[820,1180],[1180,820]]){
    frame.style.width=width+'px';frame.style.height=height+'px';await tick();
@@ -17,11 +19,31 @@ frame.onload=async()=>{
   const click=n=>id(n).click(),step=t=>{id('timeline').value=t;id('timeline').dispatchEvent(new Event('input'));};
   click('female');step(7.3);check('次级卵母细胞计数',id('stats').textContent==='2染色体4核DNA4染色单体1染色体组');
   click('d2');check('教材图可见',!id('map').hidden&&id('world').hidden);click('d3');
+  // Exercise the app's PointerEvent path; synthetic contacts do not have
+  // native capture IDs, so only the platform capture call is substituted.
+  click('d2');
+  const map=id('map'),draw=w.Diagram.draw;let camera;
+  w.Diagram.draw=(canvas,scene,cam)=>{if(canvas===map)camera=cam;return draw(canvas,scene,cam);};
+  map.setPointerCapture=()=>{};
+  const pointer=(kind,n,x,y)=>map.dispatchEvent(new w.PointerEvent('pointer'+kind,{pointerType:'touch',pointerId:n,clientX:x,clientY:y,bubbles:true}));
+  pointer('down',1,100,120);pointer('down',2,200,120);pointer('move',2,240,140);await tick();
+  check('双触点扩大间距并移动中点后同步缩放与平移',camera.zoom>1.3&&camera.target.some(n=>Math.abs(n)>.01));
+  pointer('up',1,100,120);pointer('up',2,240,140);
+  check('捏合结束没有误选染色体',id('tracktag').textContent==='');
+  delete map.setPointerCapture;w.Diagram.draw=draw;click('restore');click('d3');
   click('focusBtn');d.querySelector('[data-f="1"]').click();check('第一极体独立聚焦',!id('mini').hidden&&id('scopeName').textContent.includes('第一极体'));
   click('restore');check('回到全部细胞',id('mini').hidden);
   click('settings');id('cut').click();check('剖面开关',id('cut').checked);id('cut').click();click('settings');
-  click('male');click('independent');click('experimentCheck');click('results');
+  click('male');
+  check('独立按钮移除，完整入口名称保留',!id('independent')&&id('arrangement').textContent==='自由组合的另外一种情况'&&id('arrangement').scrollWidth<=id('arrangement').clientWidth);
+  click('arrangement');click('arrangement');check('对照切换互斥',id('arrangement').disabled&&id('play').disabled);
+  await waitUntil(()=>!id('arrangement').disabled);
+  check('回到减Ⅰ中期并完成情况二',Math.abs(+id('timeline').value-4.76)<.001&&id('expDesc').textContent.includes('情况二'));
+  click('results');
   check('反转取向产生 Ab 与 aB',id('dialogBody').textContent.includes('Ab')&&id('dialogBody').textContent.includes('aB'));click('close');
+  click('arrangement');await waitUntil(()=>!id('arrangement').disabled);click('results');
+  check('切回情况一恢复 AB、ab',Array.from(d.querySelectorAll('tr')).slice(1).map(r=>r.lastChild.textContent).join(',')==='AB,AB,ab,ab');click('close');
+  step(12);click('arrangement');step(8.25);await tick();check('拖动中断比较，时间轴准确停止',+id('timeline').value===8.25&&!id('arrangement').disabled);
   click('linked');click('results');check('互换产物对应四种组合',['AB','Ab','aB','ab'].every(g=>Array.from(d.querySelectorAll('td')).some(c=>c.textContent===g)));click('close');
   step(10.65);check('减Ⅱ后期单细胞计数',id('stats').textContent==='4染色体4核DNA0染色单体2染色体组');
   click('curve');d.querySelector('[data-s="pole"]').click();check('减Ⅱ后期单极计数',id('stats').textContent==='2染色体2核DNA0染色单体1染色体组');click('close');
@@ -29,12 +51,26 @@ frame.onload=async()=>{
   click('lens');check('复制特写装载',!!id('closeup').querySelector('canvas'));click('close');
   click('fold');check('收起数据',id('numbers').hidden);click('fold');
   id('speed').selectedIndex=4;click('play');
-  const waitUntil=async predicate=>{const until=Date.now()+25000;while(!predicate()&&Date.now()<until)await new Promise(ok=>setTimeout(ok,100));};
   await waitUntil(()=>id('play').textContent.includes('继续')&&+id('timeline').value===2);
   check('分步自动暂停并停在复制完成处',id('play').textContent.includes('继续')&&+id('timeline').value===2);
   click('play');await waitUntil(()=>+id('timeline').value>2.02);click('play');check('从上一检查点续播',+id('timeline').value>2&&+id('timeline').value<3);
   step(13.99);check('受精阶段',id('lessonTitle').textContent.includes('受精'));
-  out.push('全部通过');log.textContent=out.join('\n');
+  click('restart');id('mode').value='auto';click('play');
+  const times=[];let ts=0;
+  await new Promise((resolve,reject)=>{
+    const deadline=performance.now()+80000;
+    function sample(now){
+      if(ts)times.push(now-ts);ts=now;
+      if(+id('timeline').value===14)return resolve();
+      if(now>deadline)return reject(Error('连续播放超时'));
+      w.requestAnimationFrame(sample);
+    }
+    w.requestAnimationFrame(sample);
+  });
+  check('四倍速连续播放全程到达受精终点',id('play').textContent.includes('重新学习'));
+  const sorted=times.slice().sort((a,b)=>a-b);
+  out.push('连续播放采样 '+times.length+' 帧，帧间隔中位数 '+sorted[Math.floor(sorted.length*.5)].toFixed(1)+' ms，P95 '+sorted[Math.floor(sorted.length*.95)].toFixed(1)+' ms');
+  check('交互中无未捕获异常',errors.length===0);out.push('全部通过');log.textContent=out.join('\n');
  }catch(error){log.textContent=out.join('\n')+'\n失败　'+error.message;}
 };
 frame.src=location.pathname.includes('/tests/')?'../dist/index.html':'index.html';

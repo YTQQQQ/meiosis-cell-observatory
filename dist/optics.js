@@ -47,7 +47,7 @@
       return [width*.5+dot(v,right)*pixels,height*.5-dot(v,up)*pixels,dot(v,front)];
     };
     const light = norm(front.map((v,i)=>.85*v-.54*right[i]+.72*up[i]));
-    return {clip,width,height,front,right,up,light,project,pixels,ratio,cut:opts.cut};
+    return {clip,width,height,front,right,up,light,project,pixels,ratio,cut:opts.cut,low:opts.quality<.9};
   }
 
   // Two daughter poles may be separated in the final layout. First weld the
@@ -89,7 +89,7 @@
         float rp=sqrt(max(0.0,1.0-q*q));
         float drp=-q*dq/max(0.0001,rp);
         float q2=-uCap*y;
-        float morph=min(1.0,uProgress/.90);
+        float morph=smoothstep(0.0,.90,uProgress);
         float amp=exp(-u*u*28.0)*(1.0-smoothstep(.90,1.0,uProgress));
         vec3 parentPos=uOrigin+uParent*(ea*q+er*rp);
         vec3 daughterPos=uCenter+uRadii*(ea*q2+er*r)+uWeld*amp;
@@ -130,7 +130,7 @@
       float band=sin(vLocal.x*27.+vLocal.y*8.+vLocal.z*12.+sin(vLocal.z*19.)*.5);
       float fine=sin(91.*vLocal.y+cos(vLocal.z*40.))*sin(75.*vLocal.x);
       float pore=.5+.5*band;
-      float glass=.14+rim*.76+shine*.12+cutEdge*.34;
+      float glass=.10+rim*.73+shine*.07+cutEdge*.32;
       if(!gl_FrontFacing)glass*=.55;
       vec3 hue=uColor*(.32+.40*lam+.46*rim+.05*pore)+vec3(.70,.92,.92)*(.16*rim+.16*shine+.18*cutEdge);
       hue+=uColor*(.014*fine+.022*band);
@@ -152,10 +152,11 @@
     void main(){
       vec3 n=normalize(vN);
       float lam=max(0.,dot(n,uLight));
-      float glint=pow(max(0.,dot(n,normalize(uLight+uFront))),26.);
+      float glint=pow(max(0.,dot(n,normalize(uLight+uFront))),16.);
       float rim=pow(1.-abs(dot(n,uFront)),2.);
       float ridges=.026*cos(vAlong*6.4+dot(n,vec3(2.2,1.3,2.8)));
-      vec3 color=vCol.rgb*(.47+.58*lam+.12*rim+ridges)+vec3(.23)*glint;
+      float ambient=.48+.075*dot(n,uFront);
+      vec3 color=vCol.rgb*(ambient+.51*lam+.07*rim+ridges*.52)+vec3(.105)*glint;
       gl_FragColor=vec4(color,vCol.a);
     }`;
 
@@ -203,6 +204,7 @@
       this.values=new Float32Array(11*8192);this.indices=new Uint16Array(48000);
       this.used=0;this.count=0;this.sides=10;
       this.ring=Array.from({length:this.sides},(_,i)=>[Math.cos(TAU*i/this.sides),Math.sin(TAU*i/this.sides)]);
+      this.fiberRing=Array.from({length:5},(_,i)=>[Math.cos(TAU*i/5),Math.sin(TAU*i/5)]);
     }
     grow(v,i){
       if(v*11>this.values.length){const x=new Float32Array(Math.max(v*11,2*this.values.length));x.set(this.values);this.values=x;}
@@ -219,7 +221,8 @@
       const points=[];
       for(const p of input){const prev=points[points.length-1];if(!prev||Math.abs(prev[0]-p[0])+Math.abs(prev[1]-p[1])+Math.abs(prev[2]-p[2])>1e-7) points.push(p);}
       if(points.length<2)return;
-      const N=this.sides, r=path.radius,c=colorOf(path.color),alpha=path.alpha??1;
+      const ring=path.radius<.02?this.fiberRing:this.ring;
+      const N=ring.length, r=path.radius,c=colorOf(path.color),alpha=path.alpha??1;
       const rings=points.length+4, first=this.used;
       if(first+rings*N>65000){this.flush();}
       const start=this.used;
@@ -227,10 +230,14 @@
       let side,along=0;
       const addRing=(pos,t,a,b,scale,offset,angle)=>{
         const ca=Math.cos(angle),sa=Math.sin(angle);
-        for(const [x,y] of this.ring){
+        for(const [x,y] of ring){
           const nx=a[0]*x+b[0]*y,ny=a[1]*x+b[1]*y,nz=a[2]*x+b[2]*y;
-          this.vertex([pos[0]+r*(nx*scale+t[0]*offset),pos[1]+r*(ny*scale+t[1]*offset),pos[2]+r*(nz*scale+t[2]*offset)],
-            [nx*ca+t[0]*sa,ny*ca+t[1]*sa,nz*ca+t[2]*sa],c,alpha,along);
+          const k=this.used++*11,data=this.values;
+          data[k]=pos[0]+r*(nx*scale+t[0]*offset);
+          data[k+1]=pos[1]+r*(ny*scale+t[1]*offset);
+          data[k+2]=pos[2]+r*(nz*scale+t[2]*offset);
+          data[k+3]=nx*ca+t[0]*sa;data[k+4]=ny*ca+t[1]*sa;data[k+5]=nz*ca+t[2]*sa;
+          data[k+6]=c[0];data[k+7]=c[1];data[k+8]=c[2];data[k+9]=alpha;data[k+10]=along;
         }
       };
       for(let j=0;j<points.length;j++){
@@ -288,7 +295,7 @@
     const shell=program(gl,shellVertex,shellFragment,
       'aParam uClip uCenter uRadii uOrigin uParent uWeld uAxis uNeck uBias uCap uSplit uProgress uColor uFront uLight uAlpha uKind uCut');
     const tube=program(gl,tubeVertex,tubeFragment,'aPosition aNormal aColor aAlong uClip uLight uFront');
-    const mainGrid=paramGrid(gl),smallGrid=paramGrid(gl,18,12),batch=new TubeBatch(gl);
+    const fineGrid=paramGrid(gl),coarseGrid=paramGrid(gl,36,24),smallGrid=paramGrid(gl,18,12),batch=new TubeBatch(gl);
     batch.program=tube;
     function bindOptics(p,cam) {
       gl.useProgram(p.p);gl.uniformMatrix4fv(p.uClip,false,cam.clip);
@@ -314,6 +321,7 @@
     const depthOf=(center,cam)=>dot(center,cam.front);
     return {
       render(scene,cam){
+        const mainGrid=cam.low?coarseGrid:fineGrid;
         welds=weldOffsets(scene.shells||[]);
         gl.viewport(0,0,gl.drawingBufferWidth,gl.drawingBufferHeight);
         gl.clearColor(0,0,0,0);gl.depthMask(true);
@@ -350,7 +358,7 @@
         gl.depthMask(true);gl.disable(gl.CULL_FACE);
       },
       dispose(){
-        for(const b of [mainGrid.vb,mainGrid.ib,smallGrid.vb,smallGrid.ib,batch.buffer,batch.elements])gl.deleteBuffer(b);
+        for(const b of [fineGrid.vb,fineGrid.ib,coarseGrid.vb,coarseGrid.ib,smallGrid.vb,smallGrid.ib,batch.buffer,batch.elements])gl.deleteBuffer(b);
         gl.deleteProgram(shell.p);gl.deleteProgram(tube.p);
       }
     };
@@ -371,7 +379,8 @@
       const b=position(s.center,s.radii,-cap.sign*Math.cos(phi),Math.sin(phi));
       const unseal=clamp((cap.progress-.90)/.1,0,1);
       const amplitude=Math.exp(-28*u*u)*(1-unseal*unseal*(3-2*unseal));
-      return a.map((v,i)=>mix(v,b[i]+weld[i]*amplitude,Math.min(cap.progress/.90,1)));
+      const k=Math.min(cap.progress/.90,1);
+      return a.map((v,i)=>mix(v,b[i]+weld[i]*amplitude,k*k*(3-2*k)));
     }
     const q=Math.cos(phi),d=(q-(s.bias||0))/.31;
     return position(s.center,s.radii,q,Math.sin(phi)*(1-(s.neck||0)*Math.exp(-d*d)));
@@ -380,7 +389,7 @@
     function rgba(hex,f,a){const [r,g,b]=colorOf(hex).map(v=>Math.round(clamp(255*v*f,0,255)));return 'rgba('+r+','+g+','+b+','+a+')';}
     const fillPoly=pts=>{ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);ctx.closePath();ctx.fill();};
     function shellLayers(shell,cam,weld){
-      const layers=[[],[]], nu=18,nt=36;
+      const layers=[[],[]], nu=cam.low?12:18,nt=cam.low?24:36;
       const grid=Array.from({length:nu+1},(_,j)=>Array.from({length:nt},(_,i)=>shellPoint(shell,j/nu,i*TAU/nt,weld)));
       const projected=grid.map(row=>row.map(cam.project));
       for(let j=0;j<nu;j++)for(let i=0;i<nt;i++){
@@ -478,4 +487,6 @@
     };
     return api;
   };
+  window.Optics.shellPoint=shellPoint;
+  window.Optics.weldOffsets=weldOffsets;
 })();

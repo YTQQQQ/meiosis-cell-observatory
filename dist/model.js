@@ -3,7 +3,7 @@
   const clamp = (x,a=0,b=1)=> Math.min(b,Math.max(a,x));
   const blend=(a,b,u)=>a+(b-a)*u;
   const mix=(a,b,u)=>a.map((v,i)=>blend(v,b[i],u));
-  const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+  const smooth=x=>{x=clamp(x);return x*x*x*(10+x*(-15+6*x))};
   const ramp=(t,a,b)=>smooth((t-a)/(b-a));
   const palette=['#74baff','#ff9297'];
   const colors={mem:'#72bdb7',nuc:'#abb4e7',fiber:'#80c3bd',pole:'#f5bf70',eq:'#67c5b3'};
@@ -88,13 +88,22 @@
       const m=g.mid[branch], e=g.end[child], dir=pair?1:-1;
       const early=[(h?1:-1)*(pair?.83:.64),dir*.60,(h-.5)*.40+dir*.15];
       const syn=[(h-.5)*.59,dir*.61,dir*.34];
-      const meta=[side*.38,dir*.61,dir*.32];
+      const originSign=h?1:-1;
+      // A half-turn about the bivalent's own Y axis. Reuse the same pose for
+      // normal congression and the paused comparison, including every locus.
+      const turn=pair?(o.orientation??Number(!!o.flip)):0;
+      const theta=Math.PI*turn*ramp(t,3.78,4.66);
+      const halfSin=Math.sin(theta/2), halfCos=Math.cos(theta/2);
+      const cosY=1-2*halfSin*halfSin, sinY=2*halfSin*halfCos;
+      const meta=[originSign*.38,dir*.61,dir*.32];
       const pole=[side*1.40,dir*.51,dir*.16];
       const midpos=[m.center[0]+dir*m.r*.22,m.center[1]+dir*.12,dir*.15*m.r];
       const metaII=[m.center[0]+dir*m.r*.33,0,dir*.12*m.r];
       const late=[m.center[0]+dir*m.r*.23,sg*m.r*.6,dir*m.r*.12];
       const last=[e.center[0]+dir*e.r*.20,e.center[1]+dir*e.r*.08,dir*e.r*.08];
       const position=atFrames(t,[[0,early],[2,early],[2.97,syn],[3.78,syn],[4.66,meta],[5,meta],[5.87,pole],[7,midpos],[8,midpos],[9.35,metaII],[10.14,metaII],[10.94,late],[12,last],[13,last]]);
+      const arm=(1-ramp(t,5,5.87))*originSign*blend(.295,.38,ramp(t,3.78,4.66));
+      position[0]+=arm*(cosY-1);position[2]-=arm*sinY;
       const scale=blend(1,m.r/1.65,ramp(t,5.75,7))*(1-ramp(t,11.04,12)*(1-e.r/m.r));
       const form=o.egg?0:ramp(t,12.12,12.94);
       if(form>0){position[0]=blend(position[0],e.center[0]+dir*.08,form);position[1]=blend(position[1],e.center[1],form);}
@@ -107,41 +116,53 @@
       const exchange=ramp(t,3.23,3.68);
       const sisterSpread=ramp(t,1,2)*(1-ramp(t,10.14,10.84));
       function point(v){
-        const split=sg*(.024+.18*Math.abs(v)**1.45)*sisterSpread;
+        const split=sg*(.035+.19*Math.abs(v)**1.35)*sisterSpread;
         let dx=split*scale,dy=v*length,dz=.08*Math.sin(v*2.3+pair)*scale;
         const wave=(1-condensed)*scale*(1-form*.86);
         dx+=wave*(.21*Math.sin(v*7+pair+2*h)+.13*Math.sin(13*v+h));
         dz+=wave*.21*Math.sin(v*8+pair*2+h);
         dy+=wave*.047*Math.sin(v*10+h);
-        const unit=[position[0]+dx*Math.cos(rot)-dy*Math.sin(rot),position[1]+dx*Math.sin(rot)+dy*Math.cos(rot),position[2]+dz];
+        const localX=dx*Math.cos(rot)-dy*Math.sin(rot);
+        const unit=[position[0]+localX*cosY+dz*sinY,position[1]+dx*Math.sin(rot)+dy*Math.cos(rot),position[2]+dz*cosY-localX*sinY];
         // The two inner non-sisters contact at the exchange site, then recoil.
         if(cross)unit[0]+=(h?-1:1)*.26*Math.max(0,(v-.08)/.92)*Math.sin(Math.PI*ramp(t,3.02,3.95));
         return unit;
       }
       const points=Array.from({length:25},(_,i)=>point(i/12-1)),rad=scale*blend(.028,.091,condensed)*(.86+.14*copy)*(1-form*.5);
       const normal=tint(h), donor=tint(1-h);
-      addPath(points.slice(0,16),rad,normal,copy);
-      const distal=points.slice(15);
-      addPath(distal,rad,normal,copy*(cross?1-exchange:1));
-      if(cross&&exchange>0)addPath(distal,rad,donor,copy*exchange);
+      if(!cross||exchange===0)addPath(points,rad,normal,copy);
+      else{
+        addPath(points.slice(0,16),rad,normal,copy);
+        const distal=points.slice(15);
+        if(exchange<1)addPath(distal,rad,normal,copy*(1-exchange));
+        addPath(distal,rad,donor,copy*exchange);
+      }
       if(selected){for(const v of [-.95,.07,.94])bead(point(v),[rad*1.15,rad*1.15,rad*1.15],'#ffdb83',copy);}
       const center=point(0);bead(center,[rad*1.1,rad*.9,rad*1.05],o.color?(h?'#c2667a':'#4b91c4'):'#9daeb5',copy);
       const sequence=gene(pair,h,s,t,o);
       const geneLabels=o.example==='independent'?[[.67,sequence]]:pair?[]:[[-.61,sequence[0]],[.81,sequence[1]]];
       if(o.genes&&(!s||ramp(t,10.14,10.84)>.4||cross&&exchange>.6))
         geneLabels.forEach(([v,letter])=>labels.push({at:point(v),text:letter,kind:'gene',color:'#fff0ca'}));
-      if(!s||t>10.3)labels.push({at:point(-.98),text:(pair?'短':'长')+(h?'母':'父')+(t>10.3?(s?'②':'①'):''),kind:'id',color:parentColor(h)});
+      if(!pair&&(!s||t>10.3))labels.push({at:point(-.98),text:'长'+(h?'母':'父')+(t>10.3?(s?'②':'①'):''),kind:'id',color:parentColor(h)});
       items.push({id,pair,h,s,center,points,branch,child,sequence});
       if(spindleI>.01 && !s){
-        const p=[side*g.root.r*.81,0,0];
+        // Release then capture from the opposite pole during the illustrative turn.
+        const attachedSide=cosY>=0?originSign:-originSign;
+        const binding=spindleI*Math.abs(cosY)**2;
+        const p=[attachedSide*g.root.r*.81,0,0];
+        const anchor=center.slice();anchor[0]+=attachedSide*rad*.76;
+        bead(anchor,[rad*.46,rad*.54,rad*.48],colors.fiber,binding);
         for(let f=-1;f<=1;f++){
-          const fiber=Array.from({length:8},(_,n)=>{const u=n/7,v=mix(p,center,u);
+          const fiber=Array.from({length:8},(_,n)=>{const u=n/7,v=mix(p,anchor,u);
             v[1]+=Math.sin(Math.PI*u)*(.08*dir+f*.08);v[2]+=Math.sin(Math.PI*u)*f*.07;return v;});
-          addPath(fiber,.012,colors.fiber,spindleI*(f===0?.94:.51));
+          addPath(fiber,.012,colors.fiber,binding*(f===0?.94:.51));
         }
       }
       if(spindleII>.01){const p=m.center.slice();p[1]+=sg*m.r*.81;
-        addPath([p,mix(p,center,.52),center],.012,colors.fiber,spindleII);}
+        const anchor=center.slice();anchor[1]+=sg*rad*.76;
+        bead(anchor,[rad*.54,rad*.46,rad*.48],colors.fiber,spindleII);
+        const points=Array.from({length:7},(_,i)=>{const u=i/6,v=mix(p,anchor,u);v[0]+=dir*.075*m.r*Math.sin(Math.PI*u);return v});
+        addPath(points,.012,colors.fiber,spindleII);}
     }
     if(!o.egg && t>12.12){const u=ramp(t,12.12,12.94);
       g.end.forEach((e,i)=>{const pts=Array.from({length:25},(_,j)=>{let v=j/24;return [e.center[0]+v*1.55*u,e.center[1]-.22*u+Math.sin(v*7-t*9+i)*.17*v*u,e.center[2]-.1*v]});addPath(pts,.031,'#8ed4cb',u);});}
@@ -161,7 +182,7 @@
       if(o.track===id)beads.push({center:pts[10],radii:[.07,.07,.07],color:'#ffdb83'});
       const sc=.047;paths.push({points:pts,radius:sc,color:col});
       if(!p&&!i&&o.example==='linked'&&o.cross&&h===1) paths.push({points:pts.slice(14),radius:sc*1.1,color:palette[1-h]});
-      labels.push({at:pts[20],text:i?('另一亲本·'+(p?'短':'长')):(p?'短':'长')+(h?'母':'父'),kind:'id',color:col});
+      if(i||!p)labels.push({at:pts[20],text:i?('另一亲本·'+(p?'短':'长')):'长'+(h?'母':'父'),kind:'id',color:col});
       items.push({id,points:pts,center:pts[10],pair:p,h,s:0,branch:0,child:0,sequence:''});
     }});
     return {shells,paths,beads,labels,items,planes:[],g:family(o.egg)};

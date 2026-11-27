@@ -8,3 +8,39 @@
 
 #spark{display:block;width:100%;height:49px;margin-top:10px;border-radius:4px;background:#f0f4ec;cursor:crosshair;touch-action:none}.sparklegend{display:flex;gap:10px;font-size:11px;color:#456554}.sparklegend span:before{content:"";display:inline-block;width:9px;height:2px;vertical-align:middle;margin-right:3px;background:#25654f}.sparklegend span:nth-child(2):before{background:#4489c4}.sparklegend span:nth-child(3):before{background:#ba6474}.sparklegend span:nth-child(4):before{background:#997941}
 .viewer{display:flex;flex-direction:column}.stage{flex:1 0 auto}.transport{flex:0 0 auto}
+
+/* Keep the observation surface dominant in either tablet orientation. */
+.stage{height:clamp(345px,52vh,680px)}
+.stage:before{opacity:.52}
+.stage-tools{bottom:46px;right:10px}
+.stage-tools button,.darkseg button{min-height:44px;min-width:44px}
+.transport{padding-block:8px 10px}
+.ticks{margin-bottom:6px}.controls{padding-top:6px}
+.controls>button:not(.primary){width:44px}
+#timeline{height:28px;touch-action:pan-y}
+.workbench{flex-wrap:wrap}.expcontrols{display:flex;flex-wrap:wrap;gap:6px 12px}
+.experiment{white-space:nowrap;border-radius:8px;padding:0 12px;background:#e8efe7;color:#315a46;font-size:14px;font-weight:600;min-height:44px}
+.experiment.on{background:#275f49;color:white}
+#expOption{display:inline-flex;gap:4px;align-items:center;min-height:44px}
+#arrangement[aria-busy=true]{background:#dde7df;color:#456752;opacity:1}
+.viewer.expanded{position:fixed;inset:0;z-index:20;border:0;border-radius:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.viewer.expanded .stage{height:auto;min-height:0;flex:1}
+body.observing{overflow:hidden}
+button,select{transition:transform 160ms ease-out,background-color 180ms ease-out,color 180ms ease-out,opacity 180ms ease-out}
+button:active:not(:disabled){transform:scale(.975)}
+button:disabled{cursor:default;opacity:.55}
+button:focus-visible{outline-offset:-2px}
+#prefs:not([hidden]),dialog[open],#numbers:not([hidden]){animation:surface-in 180ms ease-out}
+@keyframes surface-in{from{opacity:.45;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media(orientation:portrait) and (min-width:650px) and (max-width:1100px){
+  .layout{grid-template-columns:1fr}.layout aside{display:grid;grid-template-columns:1.2fr 1fr}
+  .stage{height:clamp(380px,49vh,700px)}
+}
+@media(max-width:520px){.controls{flex-wrap:wrap}.controls .right{flex-wrap:wrap}.stage{height:350px}.expcontrols{gap:4px 8px}.popover{max-height:82%;overflow:auto}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:0s!important;animation-duration:0s!important;scroll-behavior:auto!important}}
+.layout{grid-template-areas:"viewer notes" "experiment experiment"}
+.layout .viewer{grid-area:viewer}.layout aside{grid-area:notes}
+.layout .workbench{grid-area:experiment;margin-top:0}
+@media(max-width:760px),(orientation:portrait) and (max-width:1100px){
+  .layout{grid-template-areas:"viewer" "experiment" "notes"}
+}

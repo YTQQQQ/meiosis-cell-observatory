@@ -18,15 +18,15 @@
     };
     function line(pts,color,width,alpha=1){if(!pts.length)return;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.globalAlpha=alpha;ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(...p.slice(0,2)):ctx.moveTo(...p.slice(0,2)));ctx.stroke();}
     ctx.lineJoin=ctx.lineCap='round';
+    const welds=Optics.weldOffsets(scene.shells);
     scene.shells.forEach(s=>{
       const cap=s.cap,axis=s.axis||0,b=1-axis, points=[];
       // Viewed from the fixed textbook side, outline both possible division axes.
       for(let half of [1,-1])for(let j=0;j<=48;j++){
         const u=half===1?j/48:1-j/48,ang=u*Math.PI;
         const p=s.center.slice();
-        if(cap){const q=cap.split+(cap.sign-cap.split)*u,q2=-cap.sign*Math.cos(ang),v=cap.progress;
-          p[axis]=(cap.origin[axis]+q*cap.parentR[axis])*(1-v)+(s.center[axis]+q2*s.radii[axis])*v;
-          p[b]=(cap.origin[b]+half*cap.parentR[b]*Math.sqrt(Math.max(0,1-q*q)))*(1-v)+(s.center[b]+half*s.radii[b]*Math.sin(ang))*v;
+        if(cap){
+          points.push(proj(Optics.shellPoint(s,u,half===1?0:Math.PI,welds.get(s))));continue;
         }else{p[axis]+=Math.cos(ang)*s.radii[axis];p[b]+=half*Math.sin(ang)*s.radii[b];}
         points.push(proj(p));
       }

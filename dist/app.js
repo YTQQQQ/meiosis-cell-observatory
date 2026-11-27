@@ -8,32 +8,45 @@
   let slowFrames=0,visualQuality=1,model,project,hit=[],modalRenderer=null,lessonKey='',dynamicKey='',dirty=true;
   const optics=Optics($('world')), range=Bio=>Math.min(13,Math.floor(Bio)), last=14;
   const stageIndex=()=>pausedEnd?Math.max(0,Math.round(t)-1):range(t), lesson=()=>Lessons[stageIndex()];
-  const activate=(a,b,v)=>{$(a).classList.toggle('on',v);$(b).classList.toggle('on',!v);};
-  function resetCamera(){cam.yaw=-.35;cam.pitch=.20;cam.zoom=1;focus=-1;draw();}
-  function pause(){playing=false;previous=0;cancelAnimationFrame(raf);raf=0;sync();}
-  function seek(value,end=false){
+  const activate=(a,b,v)=>{for(const [id,selected] of [[a,v],[b,!v]]){$(id).classList.toggle('on',selected);$(id).setAttribute('aria-pressed',selected);}};
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+  let comparison=null,compareFrame=0,pan=[0,0,0];
+  function resetCamera(){cam.yaw=-.35;cam.pitch=.20;cam.zoom=1;pan=[0,0,0];focus=-1;draw();}
+  function cancelComparison(){
+    if(!comparison)return;
+    cancelAnimationFrame(compareFrame);comparison=null;delete opt.orientation;
+    dirty=true;setupExperiment();
+  }
+  function pause(){
+    playing=false;previous=0;cancelAnimationFrame(raf);raf=0;
+    const interrupted=!!comparison;cancelComparison();
+    if(voice&&'speechSynthesis' in window)window.speechSynthesis.cancel();
+    if(interrupted){sync();draw();}
+  }
+  function seek(value,end=false,defer=false){
     intro=false;t=Biology.clamp(+value,0,last);pausedEnd=end;dirty=true;
     if(t<7||t>=13)focus=-1;
-    sync();draw();
+    sync();if(defer)scheduleDraw();else draw();
   }
   function play(){
-    if(playing){pause();return;}
+    if(comparison)return;
+    if(playing){pause();sync();return;}
     if(intro||t>=last)seek(0);
     if(pausedEnd){seek(t);}
     pausedEnd=false;playing=true;previous=0;speak();sync();raf=requestAnimationFrame(frame);
   }
   function frame(now){
     if(!playing)return;
-    if(previous){const ms=now-previous;slowFrames=ms>24?Math.min(24,slowFrames+1):Math.max(0,slowFrames-1);visualQuality=slowFrames>10?.72:1;}
+    if(previous){const ms=now-previous;slowFrames=ms>24?Math.min(48,slowFrames+1):Math.max(0,slowFrames-1);if(slowFrames>=20)visualQuality=.72;else if(slowFrames===0)visualQuality=1;}
     const dt=previous?Math.min(.16,(now-previous)/1000):0;previous=now;
     const old=stageIndex(),speed=parseFloat($('speed').value),next=Math.min(last,t+dt*speed/(old===0?3:5.2));
     if($('mode').value==='step' && next>=old+1 && old<13){
-      t=old+1;pausedEnd=true;dirty=true;pause();draw();return;
+      t=old+1;pausedEnd=true;dirty=true;pause();sync();draw();return;
     }
     t=next;dirty=true;
     if(stageIndex()!==old){if(t>=13)focus=-1;speak();}
     if(now-lastUI>75||t===last){sync();lastUI=now;}
-    draw();if(t>=last){pause();return;}raf=requestAnimationFrame(frame);
+    draw();if(t>=last){pause();sync();return;}raf=requestAnimationFrame(frame);
   }
   function sync(){
     const i=stageIndex(), q=lesson(),key=[intro,i,opt.egg,opt.example,opt.cross].join('/');
@@ -50,7 +63,8 @@
       $('timeName').textContent=intro?'全过程时间轴':q.name;
     }
     $('play').textContent=playing?'Ⅱ  暂停':intro?'▶  开始学习':t>=last?'▶  重新学习':'▶  继续';
-    $('timeline').value=intro?0:t;
+    $('timeline').value=t;
+    $('play').disabled=!!comparison;
     const v=stats(t,scope);
     $('stage').classList.toggle('neutral',!opt.color);
     const ds=[...v,scope,focus,t>=13.78,t>=13,t>=12,t>=7,opt.egg,intro].join('/');
@@ -87,9 +101,13 @@
     const w=$('stage').clientWidth,h=$('stage').clientHeight, expansion=Biology.ramp(t,5.4,7),width=5.3+expansion*2.9;
     let span=Math.max(5.6+Biology.ramp(t,10.7,12)*1.45,width*h/w*1.16);
     let target=[0,0,0];
-    if(t>=13)span=Math.max(5.4,7.0*h/w);
+    if(t>=12.9){const u=Biology.ramp(t,12.9,13.35);span+=(Math.max(5.4,7.0*h/w)-span)*u;}
     if(focus>=0&&t>=7&&t<13){const cells=t<12?model.g.mid:model.g.end,cell=cells[focus%cells.length];span=cell.r*2.85;target=cell.center;}
-    return {...cam,target,span,quality:visualQuality};
+    if(comparison?.returnView){const {startView,progress}=comparison.returnView;
+      span=startView.span+(span-startView.span)*progress;
+      target=target.map((x,i)=>startView.target[i]-pan[i]+(x-startView.target[i]+pan[i])*progress);
+    }
+    return {...cam,target:target.map((x,i)=>x+pan[i]),span,quality:visualQuality};
   }
   function draw(){
     if(dirty||!model){model=Biology.scene(t,opt);dirty=false;}
@@ -140,30 +158,55 @@
   function changeRoute(egg){pause();opt.egg=egg;focus=-1;activate('male','female',!egg);updateModel();}
   on('male',()=>changeRoute(false));on('female',()=>changeRoute(true));
   on('play',play);on('prev',()=>{pause();seek(intro?0:Math.max(0,stageIndex()-1));});on('next',()=>{pause();seek(intro?0:Math.min(last,stageIndex()+1));});on('restart',()=>{pause();focus=-1;seek(0);});
-  $('timeline').oninput=e=>{const requestedTime=e.target.value;pause();seek(requestedTime);};
+  $('timeline').oninput=e=>{const requestedTime=e.target.value;pause();seek(requestedTime,false,true);};
   on('restore',resetCamera);on('zoomIn',()=>{cam.zoom=Math.min(4,cam.zoom*1.23);draw();});on('zoomOut',()=>{cam.zoom=Math.max(.6,cam.zoom/1.23);draw();});
   function switchView(d){twoD=d;activate('d3','d2',!d);draw();}
+  const viewer=$('stage').closest('.viewer');
+  function expanded(active){
+    viewer.classList.toggle('expanded',active);document.body.classList.toggle('observing',active);
+    $('fullscreen').setAttribute('aria-pressed',String(active));
+    $('fullscreen').setAttribute('aria-label',active?'退出全屏':'全屏观察');
+    $('fullscreen').title=active?'退出全屏':'全屏观察';
+    scheduleDraw();
+  }
+  on('fullscreen',async()=>{
+    const next=!viewer.classList.contains('expanded');
+    expanded(next);
+    try{
+      if(next)await document.documentElement.requestFullscreen?.();
+      else if(document.fullscreenElement)await document.exitFullscreen();
+    }catch{/* The viewport-filling layout also works without native fullscreen. */}
+  });
+  document.addEventListener('fullscreenchange',()=>expanded(!!document.fullscreenElement));
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('dialog').open&&viewer.classList.contains('expanded'))expanded(false);});
   on('d2',()=>switchView(true));on('d3',()=>switchView(false));on('settings',()=>{$('prefs').hidden=!$('prefs').hidden;});
   $('opacity').oninput=e=>{opt.opacity=1-e.target.value/100;updateModel();};
   $('cut').onchange=e=>{cam.cut=e.target.checked;if(cam.cut&&twoD){twoD=false;activate('d3','d2',true);}draw();};$('showlabels').onchange=draw;
   for(const id of ['color','genes'])$(id).onchange=e=>{opt[id]=e.target.checked;updateModel();};
   on('resetTrack',()=>{opt.track='';opt.trackS=null;updateModel();});on('fold',()=>{$('numbers').hidden=!$('numbers').hidden;$('fold').textContent=$('numbers').hidden?'展开':'收起';});
-  const pointers=new Map();let start,dragged=false,distance=0;
+  const pointers=new Map();let start,dragged=false,distance=0,gestureFrame=0;
+  const scheduleDraw=()=>{if(!gestureFrame)gestureFrame=requestAnimationFrame(()=>{gestureFrame=0;draw();});};
   const gap=()=>{const [a,b]=[...pointers.values()];return Math.hypot(a[0]-b[0],a[1]-b[1]);};
   for(const id of ['world','map']){
-    const c=$(id);c.onpointerdown=e=>{c.setPointerCapture(e.pointerId);pointers.set(e.pointerId,[e.clientX,e.clientY]);if(pointers.size===1){start=[e.clientX,e.clientY];dragged=false;}else{dragged=true;distance=gap();}};
+    const c=$(id);c.onpointerdown=e=>{if(pointers.size>=2)return;c.setPointerCapture(e.pointerId);pointers.set(e.pointerId,[e.clientX,e.clientY]);if(pointers.size===1){start=[e.clientX,e.clientY];dragged=false;}else{dragged=true;distance=gap();}};
     c.onpointermove=e=>{if(!pointers.has(e.pointerId))return;const old=pointers.get(e.pointerId);pointers.set(e.pointerId,[e.clientX,e.clientY]);
-      if(pointers.size===2){const d=gap();if(distance>1)cam.zoom=Biology.clamp(cam.zoom*d/distance,.55,4);distance=d;}
+      if(pointers.size===2){
+        const d=gap(),worldPerPx=getCamera().span/(cam.zoom*Math.max(1,c.clientHeight));
+        const dx=(e.clientX-old[0])*worldPerPx*.5,dy=(e.clientY-old[1])*worldPerPx*.5;
+        const yaw=twoD?0:cam.yaw,pitch=twoD?0:cam.pitch;
+        pan[0]-=dx*Math.cos(yaw)+dy*Math.sin(yaw)*Math.sin(pitch);
+        pan[1]+=dy*Math.cos(pitch);pan[2]+=dx*Math.sin(yaw)-dy*Math.cos(yaw)*Math.sin(pitch);
+        if(distance>1&&d>1)cam.zoom=Biology.clamp(cam.zoom*d/distance,.55,4);distance=d;}
       else{if(Math.hypot(e.clientX-start[0],e.clientY-start[1])>4)dragged=true;
-        if(!twoD){cam.yaw+=(e.clientX-old[0])*.009;cam.pitch=Biology.clamp(cam.pitch+(e.clientY-old[1])*.008,-1.4,1.4);}}draw();};
-    c.onpointerup=e=>{pointers.delete(e.pointerId);if(dragged||pointers.size)return;
+        if(!twoD&&dragged){cam.yaw+=(e.clientX-old[0])*.009;cam.pitch=Biology.clamp(cam.pitch+(e.clientY-old[1])*.008,-1.4,1.4);}}scheduleDraw();};
+    c.onpointerup=e=>{if(!pointers.delete(e.pointerId)||dragged||pointers.size)return;
       const r=c.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
       const nearest=hit.map(it=>({id:it.id,s:it.s,d:Math.min(...it.points.map(p=>Math.hypot(p[0]-x,p[1]-y)))})).sort((a,b)=>a.d-b.d)[0];
       if(nearest&&nearest.d<21){opt.track=nearest.id;opt.trackS=(t>=10.14&&t<13)?nearest.s:null;updateModel();}};
-    c.onpointercancel=e=>{pointers.delete(e.pointerId);dragged=true;};
+    c.onpointercancel=c.onlostpointercapture=e=>{if(pointers.delete(e.pointerId))dragged=true;};
     c.onwheel=e=>{e.preventDefault();cam.zoom=Biology.clamp(cam.zoom*Math.exp(-e.deltaY*.002),.55,4);draw();};
   }
-  function openBox(title,html){pause();$('prefs').hidden=true;modalRenderer=null;Lens.unmount();$('dialogTitle').textContent=title;$('dialogBody').innerHTML=html;if(!$('dialog').open)$('dialog').showModal();}
+  function openBox(title,html){pause();sync();$('prefs').hidden=true;modalRenderer=null;Lens.unmount();$('dialogTitle').textContent=title;$('dialogBody').innerHTML=html;if(!$('dialog').open)$('dialog').showModal();}
   function closeBox(){$('dialog').close();}
   $('dialog').addEventListener('close',()=>{modalRenderer=null;Lens.unmount();});on('close',closeBox);
   $('dialog').onclick=e=>{if(e.target===$('dialog')){const b=$('dialog').getBoundingClientRect();if(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom)closeBox();}};
@@ -176,14 +219,40 @@
   }
   on('chapters',chapterMenu);
   function setupExperiment(){
-    const linked=opt.example==='linked';activate('linked','independent',linked);
-    $('expDesc').textContent=linked?'长染色体携带 AB 或 ab，观察交换点两侧的标记。':'A/a 与 B/b 分处两对染色体，观察两对的取向。';
-    $('expOption').innerHTML='<input type="checkbox" id="experimentCheck" '+((linked?opt.cross:opt.flip)?'checked':'')+'> '+(linked?'发生一次互换':'反转短染色体对');
-    $('experimentCheck').onchange=e=>{if(linked)opt.cross=e.target.checked;else opt.flip=e.target.checked;updateModel();};
-    updateModel();
+    const linked=opt.example==='linked';activate('linked','arrangement',linked);
+    $('expOption').hidden=!linked;$('experimentCheck').checked=opt.cross;
+    $('arrangement').disabled=!!comparison;
+    $('arrangement').setAttribute('aria-busy',String(!!comparison));
+    $('expDesc').textContent=comparison?(comparison.returnView?'正在定位至减Ⅰ中期…':'教学对照 · 比较两次分裂可能采用的取向。'):linked?'长染色体携带 AB 或 ab，观察对应片段的互换。':
+      '情况'+(opt.flip?'二':'一')+' · 比较不同细胞中两对同源染色体的取向。A/a 与 B/b 分处两对。';
   }
+  $('experimentCheck').onchange=e=>{pause();opt.cross=e.target.checked;updateModel();};
   on('linked',()=>{pause();opt.example='linked';opt.cross=true;opt.genes=true;$('genes').checked=true;seek(3);setupExperiment();});
-  on('independent',()=>{pause();opt.example='independent';opt.genes=true;$('genes').checked=true;seek(4.7);setupExperiment();});
+  on('arrangement',()=>{
+    if(comparison)return;
+    pause();
+    const start=t, startView=getCamera(), target=4.76, from=Number(opt.flip);
+    const travel=reduced.matches?100:Math.min(1600,Math.abs(start-target)*200);
+    const duration=reduced.matches?160:1150;
+    const began=performance.now();
+    comparison={returnView:{startView,progress:0}};intro=false;pausedEnd=false;focus=-1;
+    setupExperiment();sync();
+    function animate(now){
+      const elapsed=Math.max(0,now-began);
+      if(elapsed<travel){
+        const u=Biology.ramp(elapsed,0,travel);comparison.returnView.progress=u;t=start+(target-start)*u;
+      }else{
+        if(comparison.returnView){
+          comparison.returnView=null;t=target;opt.example='independent';opt.genes=true;$('genes').checked=true;setupExperiment();
+        }
+        const u=Biology.ramp(elapsed-travel,0,duration);opt.orientation=from+(1-2*from)*u;
+        if(u===1){opt.flip=!from;delete opt.orientation;comparison=null;setupExperiment();}
+      }
+      dirty=true;sync();draw();
+      if(comparison)compareFrame=requestAnimationFrame(animate);
+    }
+    compareFrame=requestAnimationFrame(animate);
+  });
   on('results',()=>{const future=Biology.scene(12,opt),row=j=>{const items=future.items.filter(x=>x.child===j);return '<tr><td>'+(opt.egg?['卵细胞','第二极体','第一极体的子细胞①','第一极体的子细胞②'][j]:'精细胞 '+(j+1))+'</td><td>'+items.map(a=>ids[a.id]).join('、')+'</td><td>'+items.map(a=>a.sequence).join('')+'</td></tr>';};
     openBox('本次分裂的产物','<p>按当前互换和取向设置推演到减Ⅱ结束。</p><table><tr><th>产物</th><th>染色体主体来源</th><th>基因组合</th></tr>'+[0,1,2,3].map(row).join('')+'</table><p>'+(opt.example==='linked'?'这里的两个基因位于长染色体上。开启一次互换时，四条染色单体得到 AB、Ab、aB、ab 四种标记。':'本个体有两对同源染色体。多次分裂可能出现 2²＝4 种来源组合；本次四个产物中有两种互补组合，各两个。')+'</p><button class="action" id="toProducts">在模型中查看</button>');on('toProducts',()=>{closeBox();seek(12);});});
   on('focusBtn',()=>{const cells=t>=12&&t<13?4:t>=7&&t<12?2:0;
@@ -237,7 +306,7 @@
       $('dialogBody').querySelectorAll('[data-s]').forEach(b=>b.classList.toggle('active',b.dataset.s===scope));
     };
     $('dialogBody').querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{scope=b.dataset.s;sync();modalRenderer();});
-    function jump(e){const r=chart.getBoundingClientRect();seek(Biology.clamp((e.clientX-r.left-31)/(r.width-43))*14);}
+    function jump(e){const r=chart.getBoundingClientRect();pause();seek(Biology.clamp((e.clientX-r.left-31)/(r.width-43))*14);}
     chart.onpointerdown=e=>{chart.setPointerCapture(e.pointerId);jump(e);};chart.onpointermove=e=>{if(chart.hasPointerCapture(e.pointerId))jump(e);};modalRenderer();
   }
   on('curve',curveBox);
@@ -279,7 +348,7 @@
   document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{if(b.dataset.nav==='compare')compare();else if(b.dataset.nav==='quiz')quiz();else if($('dialog').open)closeBox();});
   window.addEventListener('resize',()=>draw());
   new ResizeObserver(()=>draw()).observe($('stage'));
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing)pause();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){pause();sync();}});
   document.addEventListener('keydown',e=>{if($('dialog').open||/INPUT|SELECT|BUTTON/.test(e.target.tagName))return;if(e.code==='Space'){e.preventDefault();play();}if(e.key==='ArrowRight')$('next').click();if(e.key==='ArrowLeft')$('prev').click();});
-  setupExperiment();sync();draw();
+  activate('male','female',true);activate('d3','d2',true);setupExperiment();sync();draw();
 })();

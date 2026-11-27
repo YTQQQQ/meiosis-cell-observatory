@@ -15,6 +15,7 @@ for(const egg of [false,true])for(const example of ['linked','independent'])for(
   const o={egg,example,cross,flip,genes:true,opacity:.6,color:true,track:'Lp'};
   for(let j=0;j<=140;j++){
     const time=j/10, state=Biology.scene(time,o);sampled++;
+    assert(!state.labels.some(l=>/^短[父母副]/.test(l.text)));
     const pts=state.paths.flatMap(p=>p.points);
     assert(pts.every(p=>p.length===3&&p.every(Number.isFinite)));
     assert(state.paths.every(p=>p.radius>0));
@@ -38,4 +39,23 @@ for(const egg of [false,true])for(const example of ['linked','independent'])for(
   }
   if(egg)assert(end.g.end[0].r>end.g.end[1].r*2);
 }
-console.log(JSON.stringify({checkpointCounts:stageCounts.length,lessonCount:Lessons.length,geometrySamples:sampled,geneticConfigurations:genetic,seekRoundTrips:cycles,result:'pass'},null,2));
+const options={egg:false,example:'independent',cross:false,flip:false,opacity:.62,color:true,genes:true};
+const pose=u=>Biology.scene(4.76,{...options,orientation:u});
+let start=pose(0),prev=start;
+const distance=(a,b)=>Math.hypot(...a.map((x,i)=>x-b[i]));
+for(let j=1;j<=120;j++){
+  const frame=pose(j/120);
+  frame.items.forEach((a,k)=>{
+    assert.equal(a.id,start.items[k].id);assert.equal(a.sequence,start.items[k].sequence);
+    for(let n=0;n<a.points.length;n++){
+      assert(distance(a.points[n],prev.items[k].points[n])<.025);
+      assert(Math.abs(distance(a.points[n],a.center)-distance(start.items[k].points[n],start.items[k].center))<1e-8);
+    }
+    if(!a.pair)assert.deepEqual(a.points,start.items[k].points);
+  });
+  const anchors=frame.beads.filter(b=>b.color==='#80c3bd');
+  for(const p of frame.paths.filter(p=>p.color==='#80c3bd'))assert(anchors.some(b=>distance(b.center,p.points.at(-1))<1e-8));
+  prev=frame;
+}
+assert.deepEqual(prev.items.map(a=>a.points),Biology.scene(4.76,{...options,flip:true}).items.map(a=>a.points));
+console.log(JSON.stringify({checkpointCounts:stageCounts.length,lessonCount:Lessons.length,geometrySamples:sampled,geneticConfigurations:genetic,seekRoundTrips:cycles,turnFrames:120,result:'pass'},null,2));
