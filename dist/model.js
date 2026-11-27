@@ -143,7 +143,6 @@
       const geneLabels=o.example==='independent'?[[.67,sequence]]:pair?[]:[[-.61,sequence[0]],[.81,sequence[1]]];
       if(o.genes&&(!s||ramp(t,10.14,10.84)>.4||cross&&exchange>.6))
         geneLabels.forEach(([v,letter])=>labels.push({at:point(v),text:letter,kind:'gene',color:'#fff0ca'}));
-      if(!pair&&(!s||t>10.3))labels.push({at:point(-.98),text:'长'+(h?'母':'父')+(t>10.3?(s?'②':'①'):''),kind:'id',color:parentColor(h)});
       items.push({id,pair,h,s,center,points,branch,child,sequence});
       if(spindleI>.01 && !s){
         // Release then capture from the opposite pole during the illustrative turn.
@@ -182,7 +181,6 @@
       if(o.track===id)beads.push({center:pts[10],radii:[.07,.07,.07],color:'#ffdb83'});
       const sc=.047;paths.push({points:pts,radius:sc,color:col});
       if(!p&&!i&&o.example==='linked'&&o.cross&&h===1) paths.push({points:pts.slice(14),radius:sc*1.1,color:palette[1-h]});
-      if(i||!p)labels.push({at:pts[20],text:i?('另一亲本·'+(p?'短':'长')):'长'+(h?'母':'父'),kind:'id',color:col});
       items.push({id,points:pts,center:pts[10],pair:p,h,s:0,branch:0,child:0,sequence:''});
     }});
     return {shells,paths,beads,labels,items,planes:[],g:family(o.egg)};
