@@ -92,7 +92,7 @@
         const c1=fn(-1)(.5),c2=fn(1)(.5);
         ctx.setLineDash(e>0?[4,4]:[]);line([c1,c2],"#a99b63",1.7);ctx.setLineDash([]);
         for(const id of [-1,1]){tube(fn(id),pal,5.4);dot(fn(id)(.5),3.6,"#f4d98e","#766a43");}
-        if (d>.38) label(point(side*mix(28,105,d),-105),side<0?"父源 · 1":"母源 · 1",pal[2]);
+        
       }
       if(t>.83)label(point(0,109),"教学拆解 · 四条染色单体", "#e0e8d6",14);
     }

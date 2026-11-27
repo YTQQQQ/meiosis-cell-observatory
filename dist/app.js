@@ -2,7 +2,7 @@
   'use strict';
   const $=id=>document.getElementById(id), on=(id,fn)=>$(id).addEventListener('click',fn);
   const opt={egg:false,example:'linked',cross:true,flip:false,opacity:.62,color:true,genes:false,track:'',trackS:null};
-  const ids={Lp:'父源长染色体',Lm:'母源长染色体',Sp:'父源短染色体',Sm:'母源短染色体',other0:'另一配子的长染色体',other1:'另一配子的短染色体'};
+  const ids={Lp:'长染色体①',Lm:'长染色体②',Sp:'短染色体①',Sm:'短染色体②',other0:'另一配子的长染色体',other1:'另一配子的短染色体'};
   const cam={yaw:-.35,pitch:.2,zoom:1,target:[0,0,0],span:5.75,cut:false};
   let t=4.65,intro=true,playing=false,pausedEnd=false,twoD=false,scope='cell',focus=-1,voice=false,raf=0,previous=0,lastUI=0,slide=0;
   let slowFrames=0,visualQuality=1,model,project,hit=[],modalRenderer=null,lessonKey='',dynamicKey='',dirty=true;
@@ -73,7 +73,7 @@
       $('stats').innerHTML=v.map((n,j)=>'<div><strong>'+n+'</strong><small>'+['染色体','核DNA','染色单体','染色体组'][j]+'</small></div>').join('');
       $('scopeName').textContent=scopeLabel();
     }
-    $('tracktag').textContent=opt.track?'追踪 · '+ids[opt.track]+(opt.trackS==null?'':(opt.trackS?'②':'①')):'';
+    $('tracktag').textContent=opt.track?'追踪中':'';
     if(!$('numbers').hidden)drawSpark();
     $('more').textContent=intro?'模型说明':'深入解释';
   }
